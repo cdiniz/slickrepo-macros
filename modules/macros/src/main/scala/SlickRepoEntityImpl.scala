@@ -20,19 +20,34 @@ object SlickRepoEntityImpl {
     def modifiedDeclaration(classDecl: ClassDef) = {
       val (className, fields, parents, body) = extractCaseClassesParts(classDecl)
 
-      def extractEntityType(parents: Seq[Trees#Tree]) = {
+      def extractEntityType(parents: Seq[Trees#Tree]) : Option[(Tree, Option[Tree])] = {
         parents.collectFirst {
-          case AppliedTypeTree(_, _ :: b :: _) => b
+          case AppliedTypeTree(Ident(TypeName(entity)), _ :: entityType :: _) if entity == "Entity" => (entityType, None)
+          case AppliedTypeTree(Ident(TypeName(entity)), _  :: entityType :: versionType :: _) if entity == "VersionedEntity" => (entityType, Some(versionType))
         }
       }
 
       extractEntityType(parents) match {
-        case Some(idTpe) =>
+        case Some((idTpe, None)) =>
           c.Expr[Any](
             q"""
               case class $className ( ..$fields ) extends ..$parents {
                 override def withId(id: $idTpe): $className = {
                   this.copy(id = Some(id))
+                }
+                ..$body
+              }
+            """
+          )
+        case Some((idTpe, Some(versionTpe))) =>
+          c.Expr[Any](
+            q"""
+              case class $className ( ..$fields ) extends ..$parents {
+                override def withId(id: $idTpe): $className = {
+                  this.copy(id = Some(id))
+                }
+                override def withVersion(version: $versionTpe): $className = {
+                  this.copy(version = Some(version))
                 }
                 ..$body
               }
