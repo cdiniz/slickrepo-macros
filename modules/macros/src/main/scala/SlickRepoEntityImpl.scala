@@ -8,58 +8,45 @@ class SlickRepoEntity() extends StaticAnnotation {
 }
 
 object SlickRepoEntityImpl {
+  val errorMessage = "@SlickRepoEntity should be used with a case class that extends Entity or VersionedEntity"
 
   def impl(c: whitebox.Context)(annottees: c.Expr[Any]*): c.Expr[Any] = {
     import c.universe._
 
-    def extractCaseClassesParts(classDecl: ClassDef) = classDecl match {
-      case q"case class $className(..$fields) extends ..$parents { ..$body }" =>
-        (className, fields, parents, body)
-    }
-
-    def modifiedDeclaration(classDecl: ClassDef) = {
-      val (className, fields, parents, body) = extractCaseClassesParts(classDecl)
-
-      def extractEntityType(parents: Seq[Trees#Tree]) : Option[(Tree, Option[Tree])] = {
-        parents.collectFirst {
-          case AppliedTypeTree(Ident(TypeName(entity)), _ :: entityType :: _) if entity == "Entity" => (entityType, None)
-          case AppliedTypeTree(Ident(TypeName(entity)), _  :: entityType :: versionType :: _) if entity == "VersionedEntity" => (entityType, Some(versionType))
-        }
-      }
-
-      extractEntityType(parents) match {
-        case Some((idTpe, None)) =>
-          c.Expr[Any](
-            q"""
-              case class $className ( ..$fields ) extends ..$parents {
-                override def withId(id: $idTpe): $className = {
+    (annottees map (_.tree) toList match {
+      case q"case class $className(..$fields) extends ..$parents { ..$body }" :: Nil =>
+        parents
+          .filter {
+            case AppliedTypeTree(Ident(TypeName(entity)), _) if entity == "Entity" ||  entity == "VersionedEntity" => true
+            case _ => false
+          }
+          .collectFirst{
+            case AppliedTypeTree(_,  _  :: entityType :: versionType :: _) =>
+              q"""
+                override def withId(id: $entityType): $className = {
                   this.copy(id = Some(id))
                 }
-                ..$body
-              }
-            """
-          )
-        case Some((idTpe, Some(versionTpe))) =>
-          c.Expr[Any](
-            q"""
-              case class $className ( ..$fields ) extends ..$parents {
-                override def withId(id: $idTpe): $className = {
-                  this.copy(id = Some(id))
-                }
-                override def withVersion(version: $versionTpe): $className = {
+                override def withVersion(version: $versionType): $className = {
                   this.copy(version = Some(version))
                 }
+            """
+            case AppliedTypeTree(_, _ :: entityType :: _)  =>
+              q"""
+                override def withId(id: $entityType): $className = {
+                  this.copy(id = Some(id))
+                }
+            """
+          }.map( overrideMethods =>
+          c.Expr[Any](
+            q"""
+              case class $className ( ..$fields ) extends ..$parents {
+                ..$overrideMethods
                 ..$body
               }
             """
           )
-        case None => c.abort(c.enclosingPosition, "Invalid  usage")
-      }
-    }
-
-    annottees map (_.tree) toList match {
-      case (classDecl: ClassDef) :: Nil => modifiedDeclaration(classDecl)
-      case _ => c.abort(c.enclosingPosition, "Invalid usage")
-    }
+        )
+      case _ => None
+    }).getOrElse(c.abort(c.enclosingPosition, errorMessage))
   }
 }

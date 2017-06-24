@@ -2,11 +2,16 @@ import org.scalatest.{Matchers, WordSpec}
 import com.byteslounge.slickrepo.meta.{Entity, VersionedEntity}
 
 class SlickRepoSpec extends WordSpec with Matchers {
-  @SlickRepoEntity
-  case class Person(override val id : Option[String]) extends Entity[Person,String]
+
+  trait EmptyTrait {
+
+  }
 
   @SlickRepoEntity
-  case class PersonVersioned(override val id : Option[String], override val version : Option[Long]) extends VersionedEntity[PersonVersioned, String, Long]
+  case class Person(override val id : Option[String]) extends EmptyTrait with Entity[Person,String]
+
+  @SlickRepoEntity
+  case class PersonVersioned(override val id : Option[String], override val version : Option[Long]) extends VersionedEntity[PersonVersioned, String, Long] with EmptyTrait
 
   "`withId` should be implemented by SlickRepoEntity annotation when extending Entity" in {
      Person(Some("2")).withId("3") shouldEqual Person(Some("3"))
